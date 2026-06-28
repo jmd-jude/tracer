@@ -1,0 +1,190 @@
+import time
+import uuid
+
+from anthropic import Anthropic
+from dotenv import load_dotenv
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+
+from tracer import attribution, sdk
+from tracer.db import init_db
+
+load_dotenv()
+
+app = Flask(__name__)
+CORS(app)
+client = Anthropic()
+
+MODEL = "claude-sonnet-4-6"
+
+OUTCOMES = {
+    "pr_reviewed": {"label": "PR reviewed and merged", "value": 120},
+    "bug_resolved": {"label": "Bug triaged and resolved", "value": 200},
+    "codegen_accepted": {"label": "Code generation accepted", "value": 85},
+    "tests_generated": {"label": "Test suite generated", "value": 150},
+    "ticket_resolved": {"label": "Support ticket resolved", "value": 40},
+    "docs_drafted": {"label": "Documentation drafted", "value": 60},
+}
+
+CHAIN_STEPS = [
+    {
+        "label": "Retrieval",
+        "system": (
+            "You are a retrieval system. Given a user prompt, surface the most relevant "
+            "background context a downstream reasoning step would need. Be concise — "
+            "3-5 bullet points of concrete context, no preamble."
+        ),
+    },
+    {
+        "label": "Reasoning",
+        "system": (
+            "You are a reasoning system. Given a user prompt and retrieved context, "
+            "analyze the problem and structure a response approach. Be concise — "
+            "outline the approach in 3-5 short steps, no preamble."
+        ),
+    },
+    {
+        "label": "Generation",
+        "system": (
+            "You are a generation system. Given a user prompt, retrieved context, and a "
+            "structured approach, produce the final user-facing output. Be direct and complete."
+        ),
+    },
+]
+
+
+def init_db_route():
+    init_db()
+
+
+init_db_route()
+
+
+@app.route("/api/session/start", methods=["POST"])
+def start_session():
+    session_id = str(uuid.uuid4())
+    sdk.start(session_id)
+    return jsonify({"session_id": session_id})
+
+
+@app.route("/api/chain/run", methods=["POST"])
+def run_chain():
+    data = request.get_json()
+    prompt = data["prompt"]
+    session_id = data["session_id"]
+
+    call_log = []
+    context = ""
+    approach = ""
+
+    for i, step in enumerate(CHAIN_STEPS):
+        if step["label"] == "Retrieval":
+            user_content = f"User prompt: {prompt}"
+        elif step["label"] == "Reasoning":
+            user_content = f"User prompt: {prompt}\n\nRetrieved context:\n{context}"
+        else:
+            user_content = (
+                f"User prompt: {prompt}\n\nRetrieved context:\n{context}\n\n"
+                f"Structured approach:\n{approach}"
+            )
+
+        start_time = time.monotonic()
+        response = client.messages.create(
+            model=MODEL,
+            max_tokens=1024,
+            system=step["system"],
+            messages=[{"role": "user", "content": user_content}],
+        )
+        latency_ms = int((time.monotonic() - start_time) * 1000)
+
+        output_text = next((b.text for b in response.content if b.type == "text"), "")
+        if step["label"] == "Retrieval":
+            context = output_text
+        elif step["label"] == "Reasoning":
+            approach = output_text
+
+        token_cost = sdk.log_call(
+            session_id=session_id,
+            call_label=step["label"],
+            call_order=i,
+            model=MODEL,
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+            latency_ms=latency_ms,
+            output_text=output_text,
+        )
+
+        call_log.append(
+            {
+                "call_label": step["label"],
+                "call_order": i,
+                "model": MODEL,
+                "input_tokens": response.usage.input_tokens,
+                "output_tokens": response.usage.output_tokens,
+                "token_cost": token_cost,
+                "latency_ms": latency_ms,
+                "output_text": output_text,
+            }
+        )
+
+    return jsonify({"session_id": session_id, "calls": call_log})
+
+
+@app.route("/api/outcome/tag", methods=["POST"])
+def tag_outcome():
+    data = request.get_json()
+    session_id = data["session_id"]
+    outcome_type = data["outcome_type"]
+
+    if outcome_type not in OUTCOMES:
+        return jsonify({"error": "unknown outcome_type"}), 400
+
+    outcome = OUTCOMES[outcome_type]
+    sdk.tag_outcome(session_id, outcome_type, outcome["value"])
+
+    return jsonify(
+        {
+            "session_id": session_id,
+            "outcome_type": outcome_type,
+            "outcome_label": outcome["label"],
+            "outcome_value": outcome["value"],
+        }
+    )
+
+
+@app.route("/api/attribution/<session_id>", methods=["GET"])
+def get_attribution(session_id):
+    session = sdk.get_session(session_id)
+    if not session:
+        return jsonify({"error": "session not found"}), 404
+    if session["outcome_value"] is None:
+        return jsonify({"error": "no outcome tagged for this session"}), 400
+
+    calls = sdk.get_calls(session_id)
+    outcome_value = session["outcome_value"]
+    results = attribution.compute_all_models(calls, outcome_value)
+
+    total_cost = sum(c["token_cost"] for c in calls)
+    roi = outcome_value / total_cost if total_cost else None
+
+    return jsonify(
+        {
+            "session_id": session_id,
+            "outcome_type": session["outcome_type"],
+            "outcome_value": outcome_value,
+            "total_cost": total_cost,
+            "roi_multiple": roi,
+            "models": results,
+        }
+    )
+
+
+@app.route("/api/outcomes", methods=["GET"])
+def list_outcomes():
+    return jsonify(
+        [{"outcome_type": k, "label": v["label"], "value": v["value"]} for k, v in OUTCOMES.items()]
+    )
+
+
+if __name__ == "__main__":
+    app.run(debug=True, port=5000)
