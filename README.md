@@ -30,7 +30,9 @@ Run the server:
 python app.py
 ```
 
-Flask runs on `http://localhost:5000`. The SQLite database (`tracer.db`) is created automatically on first run.
+Flask runs on `http://127.0.0.1:5050`. The SQLite database (`tracer.db`) is created automatically on first run.
+
+Note: this runs on 5050 rather than 5000 because macOS's AirPlay Receiver (Control Center) listens on port 5000 over IPv6, which can silently swallow requests intended for Flask.
 
 ### 2. Frontend
 

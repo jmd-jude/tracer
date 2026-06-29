@@ -10,13 +10,13 @@ Token-level attribution demo for LLM workflows. Vision-demo POC, not production:
 ## Running it
 
 ```bash
-cd backend && .venv/bin/python app.py   # :5000
+cd backend && .venv/bin/python app.py   # :5050
 cd frontend && npm run dev               # :5173, proxies /api to backend
 ```
 
 ## Known quirks
 
-- **Port 5000 + macOS AirPlay Receiver:** Control Center listens on `localhost:5000` over IPv6 (AirTunes). The Vite proxy in `vite.config.js` points at `127.0.0.1:5000` explicitly to avoid silently hitting Control Center instead of Flask. If you ever curl-test the backend directly, use `127.0.0.1`, not `localhost`.
+- **Backend runs on port 5050, not 5000:** macOS AirPlay Receiver (Control Center) listens on `localhost:5000` over IPv6 (AirTunes), so anything hitting port 5000 risked silently talking to Control Center instead of Flask. We moved the backend to 5050 to avoid that conflict entirely. If you ever curl-test the backend directly, use `127.0.0.1:5050`.
 - API key lives in `backend/.env` (gitignored). Never commit it.
 
 ## Architecture

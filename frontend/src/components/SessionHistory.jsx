@@ -32,6 +32,7 @@ export default function SessionHistory({ onSelect, refreshKey }) {
                 <th className="label-caps">Outcome</th>
                 <th className="label-caps">Implied ROI</th>
                 <th className="label-caps">Tagged</th>
+                <th className="label-caps">Source</th>
               </tr>
             </thead>
             <tbody>
@@ -49,6 +50,11 @@ export default function SessionHistory({ onSelect, refreshKey }) {
                   </td>
                   <td className="mono session-table-time">
                     {new Date(s.created_at).toLocaleString()}
+                  </td>
+                  <td>
+                    <span className={`badge ${s.tagged_via === 'auto' ? 'badge-green' : ''}`}>
+                      {s.tagged_via === 'auto' ? 'auto' : 'manual'}
+                    </span>
                   </td>
                 </tr>
               ))}

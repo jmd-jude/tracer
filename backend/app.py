@@ -1,3 +1,7 @@
+import hashlib
+import hmac
+import os
+import re
 import time
 import uuid
 
@@ -10,6 +14,8 @@ from tracer import attribution, sdk
 from tracer.db import init_db
 
 load_dotenv()
+
+SESSION_ID_RE = re.compile(r"tracer-session:\s*([a-f0-9-]{36})")
 
 app = Flask(__name__)
 CORS(app)
@@ -203,6 +209,7 @@ def list_sessions():
                 "outcome_value": s["outcome_value"],
                 "roi_multiple": roi,
                 "created_at": s["created_at"],
+                "tagged_via": s["tagged_via"],
             }
         )
     return jsonify(result)
@@ -215,5 +222,78 @@ def list_outcomes():
     )
 
 
+def _verify_github_signature(payload_body: bytes, signature_header: str) -> bool:
+    secret = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
+    if not secret or not signature_header:
+        return False
+    expected = "sha256=" + hmac.new(secret.encode(), payload_body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature_header)
+
+
+def _extract_session_id(body: str | None) -> str | None:
+    match = SESSION_ID_RE.search(body or "")
+    return match.group(1) if match else None
+
+
+@app.route("/api/webhook/github", methods=["POST"])
+def github_webhook():
+    signature = request.headers.get("X-Hub-Signature-256", "")
+    if not _verify_github_signature(request.get_data(), signature):
+        return jsonify({"error": "invalid signature"}), 401
+
+    event = request.headers.get("X-GitHub-Event", "")
+    payload = request.get_json()
+
+    outcome_type = None
+    body = None
+
+    if event == "pull_request" and payload.get("action") == "closed" and payload["pull_request"].get("merged"):
+        outcome_type = "pr_reviewed"
+        body = payload["pull_request"].get("body")
+    elif (
+        event == "pull_request_review"
+        and payload.get("action") == "submitted"
+        and payload["review"].get("state") == "approved"
+    ):
+        outcome_type = "codegen_accepted"
+        body = payload["pull_request"].get("body")
+    elif event == "issues" and payload.get("action") == "closed":
+        labels = [l["name"] for l in payload["issue"].get("labels", [])]
+        if "bug" in labels:
+            outcome_type = "bug_resolved"
+            body = payload["issue"].get("body")
+
+    session_id = _extract_session_id(body) if outcome_type else None
+    outcome_tagged_label = None
+
+    if session_id and outcome_type:
+        session = sdk.get_session(session_id)
+        if session and session["outcome_value"] is None:
+            outcome = OUTCOMES[outcome_type]
+            sdk.tag_outcome(session_id, outcome_type, outcome["value"], via="auto")
+            outcome_tagged_label = outcome_type
+
+    sdk.log_webhook_event(event, payload, session_id, outcome_tagged_label)
+
+    return jsonify({"status": "ok"}), 200
+
+
+@app.route("/api/webhook/events", methods=["GET"])
+def list_webhook_events():
+    events = sdk.list_webhook_events(limit=20)
+    return jsonify(
+        [
+            {
+                "id": e["id"],
+                "event_type": e["event_type"],
+                "session_id_extracted": e["session_id_extracted"],
+                "outcome_tagged": e["outcome_tagged"],
+                "received_at": e["received_at"],
+            }
+            for e in events
+        ]
+    )
+
+
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=5050)

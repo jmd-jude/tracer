@@ -3,6 +3,7 @@ import RunChain from './components/RunChain.jsx'
 import TagOutcome from './components/TagOutcome.jsx'
 import AttributionOutput from './components/AttributionOutput.jsx'
 import SessionHistory from './components/SessionHistory.jsx'
+import WebhookEvents from './components/WebhookEvents.jsx'
 import { getAttribution } from './api.js'
 import './App.css'
 
@@ -76,6 +77,7 @@ export default function App() {
         <AttributionOutput data={attribution} model={model} onModelChange={setModel} />
       </main>
       <SessionHistory onSelect={handleSelectSession} refreshKey={historyKey} />
+      <WebhookEvents refreshKey={historyKey} />
     </div>
   )
 }

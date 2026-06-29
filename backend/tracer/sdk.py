@@ -9,7 +9,9 @@ Three primitives:
 Wire this into any LLM workflow by calling log_call() around each API call.
 """
 
+import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 from tracer.db import get_db
 
@@ -38,6 +40,7 @@ def start(session_id: str) -> None:
     )
     conn.commit()
     conn.close()
+    Path(".tracer").write_text(session_id)
 
 
 def log_call(
@@ -89,12 +92,12 @@ def set_prompt(session_id: str, prompt: str) -> None:
     conn.close()
 
 
-def tag_outcome(session_id: str, outcome_type: str, outcome_value: float) -> None:
+def tag_outcome(session_id: str, outcome_type: str, outcome_value: float, via: str = "manual") -> None:
     """Close the attribution loop by tagging a business outcome against a session."""
     conn = get_db()
     conn.execute(
-        "UPDATE sessions SET outcome_type = ?, outcome_value = ?, outcome_tagged_at = ? WHERE session_id = ?",
-        (outcome_type, outcome_value, _now(), session_id),
+        "UPDATE sessions SET outcome_type = ?, outcome_value = ?, outcome_tagged_at = ?, tagged_via = ? WHERE session_id = ?",
+        (outcome_type, outcome_value, _now(), via, session_id),
     )
     conn.commit()
     conn.close()
@@ -122,7 +125,7 @@ def list_recent_sessions(limit: int = 10) -> list[dict]:
     """Fetch the most recent tagged sessions with their total cost, for the history panel."""
     conn = get_db()
     rows = conn.execute(
-        """SELECT s.session_id, s.prompt, s.outcome_type, s.outcome_value, s.created_at,
+        """SELECT s.session_id, s.prompt, s.outcome_type, s.outcome_value, s.created_at, s.tagged_via,
                   SUM(c.token_cost) AS total_cost
            FROM sessions s
            LEFT JOIN calls c ON c.session_id = s.session_id
@@ -131,6 +134,34 @@ def list_recent_sessions(limit: int = 10) -> list[dict]:
            ORDER BY s.created_at DESC
            LIMIT ?""",
         (limit,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def log_webhook_event(
+    event_type: str,
+    github_payload: dict,
+    session_id_extracted: str | None,
+    outcome_tagged: str | None,
+) -> None:
+    """Record an inbound GitHub webhook event for the debug/demo panel."""
+    conn = get_db()
+    conn.execute(
+        """INSERT INTO webhook_events
+           (event_type, github_payload, session_id_extracted, outcome_tagged, received_at)
+           VALUES (?, ?, ?, ?, ?)""",
+        (event_type, json.dumps(github_payload), session_id_extracted, outcome_tagged, _now()),
+    )
+    conn.commit()
+    conn.close()
+
+
+def list_webhook_events(limit: int = 20) -> list[dict]:
+    """Fetch the most recent inbound webhook events, for the debug/demo panel."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM webhook_events ORDER BY received_at DESC LIMIT ?", (limit,)
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]

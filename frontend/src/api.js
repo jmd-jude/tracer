@@ -31,3 +31,5 @@ export const getAttribution = (sessionId) => request(`/attribution/${sessionId}`
 export const listOutcomes = () => request('/outcomes')
 
 export const listSessions = () => request('/sessions')
+
+export const listWebhookEvents = () => request('/webhook/events')

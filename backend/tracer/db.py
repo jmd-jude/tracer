@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     prompt TEXT,
     outcome_type TEXT,
     outcome_value REAL,
-    outcome_tagged_at TEXT
+    outcome_tagged_at TEXT,
+    tagged_via TEXT DEFAULT 'manual'
 );
 
 CREATE TABLE IF NOT EXISTS calls (
@@ -28,6 +29,15 @@ CREATE TABLE IF NOT EXISTS calls (
     output_text TEXT,
     created_at TEXT NOT NULL,
     FOREIGN KEY (session_id) REFERENCES sessions (session_id)
+);
+
+CREATE TABLE IF NOT EXISTS webhook_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT NOT NULL,
+    github_payload TEXT NOT NULL,
+    session_id_extracted TEXT,
+    outcome_tagged TEXT,
+    received_at TEXT NOT NULL
 );
 """
 
