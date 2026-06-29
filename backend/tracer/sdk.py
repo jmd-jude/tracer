@@ -81,6 +81,14 @@ def log_call(
     return token_cost
 
 
+def set_prompt(session_id: str, prompt: str) -> None:
+    """Attach the originating prompt to a session, for display in session history."""
+    conn = get_db()
+    conn.execute("UPDATE sessions SET prompt = ? WHERE session_id = ?", (prompt, session_id))
+    conn.commit()
+    conn.close()
+
+
 def tag_outcome(session_id: str, outcome_type: str, outcome_value: float) -> None:
     """Close the attribution loop by tagging a business outcome against a session."""
     conn = get_db()
@@ -105,6 +113,24 @@ def get_calls(session_id: str) -> list[dict]:
     conn = get_db()
     rows = conn.execute(
         "SELECT * FROM calls WHERE session_id = ? ORDER BY call_order", (session_id,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def list_recent_sessions(limit: int = 10) -> list[dict]:
+    """Fetch the most recent tagged sessions with their total cost, for the history panel."""
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT s.session_id, s.prompt, s.outcome_type, s.outcome_value, s.created_at,
+                  SUM(c.token_cost) AS total_cost
+           FROM sessions s
+           LEFT JOIN calls c ON c.session_id = s.session_id
+           WHERE s.outcome_value IS NOT NULL
+           GROUP BY s.session_id
+           ORDER BY s.created_at DESC
+           LIMIT ?""",
+        (limit,),
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]

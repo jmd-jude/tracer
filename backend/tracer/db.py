@@ -9,6 +9,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
     session_id TEXT PRIMARY KEY,
     created_at TEXT NOT NULL,
+    prompt TEXT,
     outcome_type TEXT,
     outcome_value REAL,
     outcome_tagged_at TEXT

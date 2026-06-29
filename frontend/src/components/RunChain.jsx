@@ -1,23 +1,36 @@
 import { useEffect, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { startSession, runChain } from '../api.js'
 
 const STEPS = ['Retrieval', 'Reasoning', 'Generation']
 
-export default function RunChain({ onComplete }) {
+export default function RunChain({ onComplete, viewSession }) {
   const [prompt, setPrompt] = useState('')
   const [running, setRunning] = useState(false)
   const [activeStep, setActiveStep] = useState(-1)
   const [error, setError] = useState(null)
   const [calls, setCalls] = useState(null)
+  const [expanded, setExpanded] = useState({})
   const timerRef = useRef(null)
 
   useEffect(() => () => clearInterval(timerRef.current), [])
+
+  useEffect(() => {
+    if (!viewSession) return
+    setError(null)
+    setPrompt(viewSession.prompt || '')
+    setCalls(viewSession.calls)
+    setExpanded({})
+    setActiveStep(STEPS.length)
+  }, [viewSession?.sessionId])
 
   async function handleRun() {
     if (!prompt.trim() || running) return
     setRunning(true)
     setError(null)
     setCalls(null)
+    setExpanded({})
     setActiveStep(0)
 
     let step = 0
@@ -86,10 +99,23 @@ export default function RunChain({ onComplete }) {
           <div className="card-inner call-log">
             <span className="label-caps">Call Log</span>
             {calls.map((c) => (
-              <div key={c.call_order} className="call-log-row">
-                <span className="body-sm call-log-label">{c.call_label}</span>
-                <span className="mono call-log-value">${c.token_cost.toFixed(5)}</span>
-                <span className="mono call-log-value">{c.latency_ms}ms</span>
+              <div key={c.call_order} className="call-log-entry">
+                <div className="call-log-row">
+                  <span className="body-sm call-log-label">{c.call_label}</span>
+                  <span className="mono call-log-value">${c.token_cost.toFixed(5)}</span>
+                  <span className="mono call-log-value">{c.latency_ms}ms</span>
+                  <button
+                    className="call-log-toggle"
+                    onClick={() => setExpanded((prev) => ({ ...prev, [c.call_order]: !prev[c.call_order] }))}
+                  >
+                    {expanded[c.call_order] ? 'Hide output' : 'View output'}
+                  </button>
+                </div>
+                {expanded[c.call_order] && (
+                  <div className="card-inner call-log-output body-sm">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{c.output_text}</ReactMarkdown>
+                  </div>
+                )}
               </div>
             ))}
           </div>

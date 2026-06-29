@@ -32,7 +32,7 @@ CHAIN_STEPS = [
         "system": (
             "You are a retrieval system. Given a user prompt, surface the most relevant "
             "background context a downstream reasoning step would need. Be concise — "
-            "3-5 bullet points of concrete context, no preamble."
+            "3-5 markdown dash-bullet points ('- ...') of concrete context, no preamble."
         ),
     },
     {
@@ -72,6 +72,7 @@ def run_chain():
     data = request.get_json()
     prompt = data["prompt"]
     session_id = data["session_id"]
+    sdk.set_prompt(session_id, prompt)
 
     call_log = []
     context = ""
@@ -166,17 +167,45 @@ def get_attribution(session_id):
 
     total_cost = sum(c["token_cost"] for c in calls)
     roi = outcome_value / total_cost if total_cost else None
+    outcome_label = OUTCOMES.get(session["outcome_type"], {}).get("label", session["outcome_type"])
 
     return jsonify(
         {
             "session_id": session_id,
+            "prompt": session["prompt"],
             "outcome_type": session["outcome_type"],
+            "outcome_label": outcome_label,
             "outcome_value": outcome_value,
             "total_cost": total_cost,
             "roi_multiple": roi,
             "models": results,
+            "calls": calls,
         }
     )
+
+
+@app.route("/api/sessions", methods=["GET"])
+def list_sessions():
+    sessions = sdk.list_recent_sessions(limit=10)
+    result = []
+    for s in sessions:
+        prompt = s["prompt"] or ""
+        snippet = prompt[:60] + ("…" if len(prompt) > 60 else "")
+        total_cost = s["total_cost"] or 0
+        roi = s["outcome_value"] / total_cost if total_cost else None
+        outcome_label = OUTCOMES.get(s["outcome_type"], {}).get("label", s["outcome_type"])
+        result.append(
+            {
+                "session_id": s["session_id"],
+                "prompt_snippet": snippet,
+                "outcome_type": s["outcome_type"],
+                "outcome_label": outcome_label,
+                "outcome_value": s["outcome_value"],
+                "roi_multiple": roi,
+                "created_at": s["created_at"],
+            }
+        )
+    return jsonify(result)
 
 
 @app.route("/api/outcomes", methods=["GET"])
