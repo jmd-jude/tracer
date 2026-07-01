@@ -4,6 +4,8 @@ This extends the existing Tracer POC to close the attribution loop automatically
 
 This is a proof of concept, not production. Use your existing GitHub account and a real repo (can be a throwaway test repo).
 
+> **Post-build correction:** this spec originally said to add `.tracer` to `.gitignore`. That's wrong — the GitHub Action reads `.tracer` from a checkout of the *pushed* branch, so a gitignored file (which never gets pushed) is invisible to it. The implementation was corrected to track `.tracer` in git so it travels with the branch on a normal `git add`/`commit`/`push`, which is what makes Part 4 (automatic propagation) actually work.
+
 ---
 
 ## What we're building

@@ -291,6 +291,21 @@
   color: var(--ink);
 }
 
+.session-id-copy-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.session-id-copy-row .session-id {
+  flex: 1;
+}
+
+.session-id-copy-row .sdk-snippet-copy {
+  align-self: auto;
+  flex-shrink: 0;
+}
+
 .placeholder-text {
   color: var(--slate);
 }
@@ -483,4 +498,34 @@
 
 .session-table-time {
   color: var(--slate);
+}
+
+/* Outcome Library */
+
+.outcome-library-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
+.outcome-library-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.outcome-library-form-row .input {
+  flex: 1 1 160px;
+}
+
+.outcome-library-form-actions {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.outcome-library-action {
+  margin-right: var(--space-xs);
+  padding: 4px 10px;
+  font-size: 0.75rem;
 }

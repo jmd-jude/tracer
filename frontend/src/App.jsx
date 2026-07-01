@@ -4,6 +4,7 @@ import TagOutcome from './components/TagOutcome.jsx'
 import AttributionOutput from './components/AttributionOutput.jsx'
 import SessionHistory from './components/SessionHistory.jsx'
 import WebhookEvents from './components/WebhookEvents.jsx'
+import OutcomeLibrary from './components/OutcomeLibrary.jsx'
 import { getAttribution } from './api.js'
 import './App.css'
 
@@ -61,6 +62,7 @@ export default function App() {
             calls={calls}
             initialTagged={initialTagged}
             onTagged={handleTagged}
+            refreshKey={historyKey}
           />
         ) : (
           <div className="card panel">
@@ -78,6 +80,7 @@ export default function App() {
       </main>
       <SessionHistory onSelect={handleSelectSession} refreshKey={historyKey} />
       <WebhookEvents refreshKey={historyKey} />
+      <OutcomeLibrary onChange={() => setHistoryKey((k) => k + 1)} />
     </div>
   )
 }

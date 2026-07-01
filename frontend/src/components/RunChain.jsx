@@ -12,6 +12,8 @@ export default function RunChain({ onComplete, viewSession }) {
   const [error, setError] = useState(null)
   const [calls, setCalls] = useState(null)
   const [expanded, setExpanded] = useState({})
+  const [sessionId, setSessionId] = useState(null)
+  const [copied, setCopied] = useState(false)
   const timerRef = useRef(null)
 
   useEffect(() => () => clearInterval(timerRef.current), [])
@@ -23,7 +25,16 @@ export default function RunChain({ onComplete, viewSession }) {
     setCalls(viewSession.calls)
     setExpanded({})
     setActiveStep(STEPS.length)
+    setSessionId(viewSession.sessionId)
+    setCopied(false)
   }, [viewSession?.sessionId])
+
+  async function handleCopySessionId() {
+    if (!sessionId) return
+    await navigator.clipboard.writeText(sessionId)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
 
   async function handleRun() {
     if (!prompt.trim() || running) return
@@ -41,6 +52,8 @@ export default function RunChain({ onComplete, viewSession }) {
 
     try {
       const { session_id } = await startSession()
+      setSessionId(session_id)
+      setCopied(false)
       const { calls: result } = await runChain(session_id, prompt)
       clearInterval(timerRef.current)
       setActiveStep(STEPS.length)
@@ -73,6 +86,22 @@ export default function RunChain({ onComplete, viewSession }) {
         </button>
 
         {error && <p className="body-sm error-text">{error}</p>}
+
+        {sessionId && (
+          <div className="card-inner session-id-row">
+            <span className="label-caps">Session ID</span>
+            <div className="session-id-copy-row">
+              <span className="mono session-id">{sessionId}</span>
+              <button className="btn-secondary sdk-snippet-copy" onClick={handleCopySessionId}>
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+            <p className="body-sm placeholder-text">
+              Paste this into a PR or issue as <span className="mono">tracer-session: {'<id>'}</span> to
+              auto-tag the outcome when GitHub reports it.
+            </p>
+          </div>
+        )}
 
         {activeStep >= 0 && (
           <div className="step-list">

@@ -16,21 +16,13 @@ from tracer.db import init_db
 load_dotenv()
 
 SESSION_ID_RE = re.compile(r"tracer-session:\s*([a-f0-9-]{36})")
+OUTCOME_KEY_RE = re.compile(r"^[a-z0-9]+(_[a-z0-9]+)*$")
 
 app = Flask(__name__)
 CORS(app)
 client = Anthropic()
 
 MODEL = "claude-sonnet-4-6"
-
-OUTCOMES = {
-    "pr_reviewed": {"label": "PR reviewed and merged", "value": 120},
-    "bug_resolved": {"label": "Bug triaged and resolved", "value": 200},
-    "codegen_accepted": {"label": "Code generation accepted", "value": 85},
-    "tests_generated": {"label": "Test suite generated", "value": 150},
-    "ticket_resolved": {"label": "Support ticket resolved", "value": 40},
-    "docs_drafted": {"label": "Documentation drafted", "value": 60},
-}
 
 CHAIN_STEPS = [
     {
@@ -59,11 +51,7 @@ CHAIN_STEPS = [
 ]
 
 
-def init_db_route():
-    init_db()
-
-
-init_db_route()
+init_db()
 
 
 @app.route("/api/session/start", methods=["POST"])
@@ -143,10 +131,10 @@ def tag_outcome():
     session_id = data["session_id"]
     outcome_type = data["outcome_type"]
 
-    if outcome_type not in OUTCOMES:
+    outcome = sdk.get_outcome_type(outcome_type)
+    if not outcome:
         return jsonify({"error": "unknown outcome_type"}), 400
 
-    outcome = OUTCOMES[outcome_type]
     sdk.tag_outcome(session_id, outcome_type, outcome["value"])
 
     return jsonify(
@@ -173,7 +161,8 @@ def get_attribution(session_id):
 
     total_cost = sum(c["token_cost"] for c in calls)
     roi = outcome_value / total_cost if total_cost else None
-    outcome_label = OUTCOMES.get(session["outcome_type"], {}).get("label", session["outcome_type"])
+    outcome_row = sdk.get_outcome_type(session["outcome_type"])
+    outcome_label = outcome_row["label"] if outcome_row else session["outcome_type"]
 
     return jsonify(
         {
@@ -199,7 +188,8 @@ def list_sessions():
         snippet = prompt[:60] + ("…" if len(prompt) > 60 else "")
         total_cost = s["total_cost"] or 0
         roi = s["outcome_value"] / total_cost if total_cost else None
-        outcome_label = OUTCOMES.get(s["outcome_type"], {}).get("label", s["outcome_type"])
+        outcome_row = sdk.get_outcome_type(s["outcome_type"])
+        outcome_label = outcome_row["label"] if outcome_row else s["outcome_type"]
         result.append(
             {
                 "session_id": s["session_id"],
@@ -218,8 +208,73 @@ def list_sessions():
 @app.route("/api/outcomes", methods=["GET"])
 def list_outcomes():
     return jsonify(
-        [{"outcome_type": k, "label": v["label"], "value": v["value"]} for k, v in OUTCOMES.items()]
+        [
+            {"outcome_type": o["outcome_key"], "label": o["label"], "value": o["value"]}
+            for o in sdk.list_outcome_types()
+        ]
     )
+
+
+@app.route("/api/outcome-types", methods=["GET"])
+def list_outcome_types_route():
+    return jsonify(sdk.list_outcome_types())
+
+
+@app.route("/api/outcome-types", methods=["POST"])
+def create_outcome_type_route():
+    data = request.get_json()
+    outcome_key = data.get("outcome_key", "")
+    label = data.get("label", "")
+    value = data.get("value")
+    webhook_event = data.get("webhook_event") or None
+
+    if not OUTCOME_KEY_RE.match(outcome_key):
+        return jsonify({"error": "outcome_key must be lowercase letters, numbers, and underscores"}), 400
+    if not label.strip():
+        return jsonify({"error": "label is required"}), 400
+    if value is None or not isinstance(value, (int, float)) or value < 0:
+        return jsonify({"error": "value must be a non-negative number"}), 400
+    if sdk.get_outcome_type(outcome_key):
+        return jsonify({"error": "outcome_key already exists"}), 400
+    if webhook_event and sdk.get_outcome_type_by_webhook_event(webhook_event):
+        return jsonify({"error": f"webhook_event '{webhook_event}' is already mapped to another outcome"}), 400
+
+    outcome = sdk.create_outcome_type(outcome_key, label.strip(), value, webhook_event)
+    return jsonify(outcome), 201
+
+
+@app.route("/api/outcome-types/<key>", methods=["PUT"])
+def update_outcome_type_route(key):
+    if not sdk.get_outcome_type(key):
+        return jsonify({"error": "outcome type not found"}), 404
+
+    data = request.get_json()
+    label = data.get("label", "")
+    value = data.get("value")
+    webhook_event = data.get("webhook_event") or None
+
+    if not label.strip():
+        return jsonify({"error": "label is required"}), 400
+    if value is None or not isinstance(value, (int, float)) or value < 0:
+        return jsonify({"error": "value must be a non-negative number"}), 400
+
+    existing_mapping = sdk.get_outcome_type_by_webhook_event(webhook_event) if webhook_event else None
+    if existing_mapping and existing_mapping["outcome_key"] != key:
+        return jsonify({"error": f"webhook_event '{webhook_event}' is already mapped to another outcome"}), 400
+
+    outcome = sdk.update_outcome_type(key, label.strip(), value, webhook_event)
+    return jsonify(outcome)
+
+
+@app.route("/api/outcome-types/<key>", methods=["DELETE"])
+def delete_outcome_type_route(key):
+    if not sdk.get_outcome_type(key):
+        return jsonify({"error": "outcome type not found"}), 404
+    try:
+        sdk.delete_outcome_type(key)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"status": "ok"}), 200
 
 
 def _verify_github_signature(payload_body: bytes, signature_header: str) -> bool:
@@ -235,6 +290,23 @@ def _extract_session_id(body: str | None) -> str | None:
     return match.group(1) if match else None
 
 
+def _derive_webhook_pattern(event: str, payload: dict) -> tuple[str | None, str | None]:
+    """Derive a webhook_event pattern string and the relevant body text from an inbound event."""
+    if event == "pull_request" and payload.get("action") == "closed" and payload["pull_request"].get("merged"):
+        return "pull_request:merged", payload["pull_request"].get("body")
+    if (
+        event == "pull_request_review"
+        and payload.get("action") == "submitted"
+        and payload["review"].get("state") == "approved"
+    ):
+        return "pull_request_review:approved", payload["pull_request"].get("body")
+    if event == "issues" and payload.get("action") == "closed":
+        labels = [l["name"] for l in payload["issue"].get("labels", [])]
+        if "bug" in labels:
+            return "issues:closed:bug", payload["issue"].get("body")
+    return None, None
+
+
 @app.route("/api/webhook/github", methods=["POST"])
 def github_webhook():
     signature = request.headers.get("X-Hub-Signature-256", "")
@@ -244,34 +316,17 @@ def github_webhook():
     event = request.headers.get("X-GitHub-Event", "")
     payload = request.get_json()
 
-    outcome_type = None
-    body = None
+    pattern, body = _derive_webhook_pattern(event, payload)
+    outcome = sdk.get_outcome_type_by_webhook_event(pattern) if pattern else None
 
-    if event == "pull_request" and payload.get("action") == "closed" and payload["pull_request"].get("merged"):
-        outcome_type = "pr_reviewed"
-        body = payload["pull_request"].get("body")
-    elif (
-        event == "pull_request_review"
-        and payload.get("action") == "submitted"
-        and payload["review"].get("state") == "approved"
-    ):
-        outcome_type = "codegen_accepted"
-        body = payload["pull_request"].get("body")
-    elif event == "issues" and payload.get("action") == "closed":
-        labels = [l["name"] for l in payload["issue"].get("labels", [])]
-        if "bug" in labels:
-            outcome_type = "bug_resolved"
-            body = payload["issue"].get("body")
-
-    session_id = _extract_session_id(body) if outcome_type else None
+    session_id = _extract_session_id(body) if outcome else None
     outcome_tagged_label = None
 
-    if session_id and outcome_type:
+    if session_id and outcome:
         session = sdk.get_session(session_id)
         if session and session["outcome_value"] is None:
-            outcome = OUTCOMES[outcome_type]
-            sdk.tag_outcome(session_id, outcome_type, outcome["value"], via="auto")
-            outcome_tagged_label = outcome_type
+            sdk.tag_outcome(session_id, outcome["outcome_key"], outcome["value"], via="auto")
+            outcome_tagged_label = outcome["outcome_key"]
 
     sdk.log_webhook_event(event, payload, session_id, outcome_tagged_label)
 

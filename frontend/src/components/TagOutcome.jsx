@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { listOutcomes, tagOutcome } from '../api.js'
 
-export default function TagOutcome({ sessionId, calls, initialTagged, onTagged }) {
+export default function TagOutcome({ sessionId, calls, initialTagged, onTagged, refreshKey }) {
   const [outcomes, setOutcomes] = useState([])
   const [selected, setSelected] = useState(null)
   const [tagging, setTagging] = useState(false)
@@ -12,7 +12,7 @@ export default function TagOutcome({ sessionId, calls, initialTagged, onTagged }
 
   useEffect(() => {
     listOutcomes().then(setOutcomes).catch((err) => setError(err.message))
-  }, [])
+  }, [refreshKey])
 
   useEffect(() => {
     setTagged(initialTagged || null)

@@ -165,3 +165,76 @@ def list_webhook_events(limit: int = 20) -> list[dict]:
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def list_outcome_types() -> list[dict]:
+    """Fetch all outcome types, ordered by creation order."""
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM outcome_types ORDER BY id").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_outcome_type(outcome_key: str) -> dict | None:
+    """Fetch a single outcome type by its key, or None if it doesn't exist."""
+    conn = get_db()
+    row = conn.execute(
+        "SELECT * FROM outcome_types WHERE outcome_key = ?", (outcome_key,)
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_outcome_type_by_webhook_event(webhook_event: str) -> dict | None:
+    """Fetch the outcome type mapped to a webhook event pattern, or None if unmapped."""
+    conn = get_db()
+    row = conn.execute(
+        "SELECT * FROM outcome_types WHERE webhook_event = ?", (webhook_event,)
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def create_outcome_type(
+    outcome_key: str, label: str, value: float, webhook_event: str | None = None
+) -> dict:
+    """Create a new outcome type and return the created row."""
+    conn = get_db()
+    now = _now()
+    conn.execute(
+        """INSERT INTO outcome_types (outcome_key, label, value, webhook_event, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (outcome_key, label, value, webhook_event, now, now),
+    )
+    conn.commit()
+    conn.close()
+    return get_outcome_type(outcome_key)
+
+
+def update_outcome_type(
+    outcome_key: str, label: str, value: float, webhook_event: str | None = None
+) -> dict:
+    """Update an existing outcome type's label, value, and webhook mapping."""
+    conn = get_db()
+    conn.execute(
+        """UPDATE outcome_types SET label = ?, value = ?, webhook_event = ?, updated_at = ?
+           WHERE outcome_key = ?""",
+        (label, value, webhook_event, _now(), outcome_key),
+    )
+    conn.commit()
+    conn.close()
+    return get_outcome_type(outcome_key)
+
+
+def delete_outcome_type(outcome_key: str) -> None:
+    """Delete an outcome type. Raises ValueError if it's referenced by any session."""
+    conn = get_db()
+    count = conn.execute(
+        "SELECT COUNT(*) FROM sessions WHERE outcome_type = ?", (outcome_key,)
+    ).fetchone()[0]
+    if count > 0:
+        conn.close()
+        raise ValueError(f"This outcome has been used in {count} sessions and cannot be deleted.")
+    conn.execute("DELETE FROM outcome_types WHERE outcome_key = ?", (outcome_key,))
+    conn.commit()
+    conn.close()

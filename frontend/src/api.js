@@ -33,3 +33,14 @@ export const listOutcomes = () => request('/outcomes')
 export const listSessions = () => request('/sessions')
 
 export const listWebhookEvents = () => request('/webhook/events')
+
+export const listOutcomeTypes = () => request('/outcome-types')
+
+export const createOutcomeType = (data) =>
+  request('/outcome-types', { method: 'POST', body: JSON.stringify(data) })
+
+export const updateOutcomeType = (key, data) =>
+  request(`/outcome-types/${key}`, { method: 'PUT', body: JSON.stringify(data) })
+
+export const deleteOutcomeType = (key) =>
+  request(`/outcome-types/${key}`, { method: 'DELETE' })

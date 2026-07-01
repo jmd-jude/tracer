@@ -1,6 +1,7 @@
 """SQLite connection and schema for Tracer session/trace persistence."""
 
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parent.parent / "tracer.db"
@@ -39,7 +40,26 @@ CREATE TABLE IF NOT EXISTS webhook_events (
     outcome_tagged TEXT,
     received_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS outcome_types (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    outcome_key TEXT NOT NULL UNIQUE,
+    label TEXT NOT NULL,
+    value REAL NOT NULL,
+    webhook_event TEXT UNIQUE,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 """
+
+SEED_OUTCOME_TYPES = [
+    ("pr_reviewed", "PR reviewed and merged", 120, "pull_request:merged"),
+    ("bug_resolved", "Bug triaged and resolved", 200, "issues:closed:bug"),
+    ("codegen_accepted", "Code generation accepted", 85, "pull_request_review:approved"),
+    ("tests_generated", "Test suite generated", 150, None),
+    ("ticket_resolved", "Support ticket resolved", 40, None),
+    ("docs_drafted", "Documentation drafted", 60, None),
+]
 
 
 def get_db():
@@ -52,5 +72,13 @@ def get_db():
 def init_db():
     conn = get_db()
     conn.executescript(SCHEMA)
+    now = datetime.now(timezone.utc).isoformat()
+    for outcome_key, label, value, webhook_event in SEED_OUTCOME_TYPES:
+        conn.execute(
+            """INSERT OR IGNORE INTO outcome_types
+               (outcome_key, label, value, webhook_event, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (outcome_key, label, value, webhook_event, now, now),
+        )
     conn.commit()
     conn.close()
