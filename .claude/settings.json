@@ -4,7 +4,12 @@
       "Skill(claude-api)",
       "Skill(claude-api:*)",
       "WebFetch(domain:tetrate.io)",
-      "WebFetch(domain:langfuse.com)"
+      "WebFetch(domain:langfuse.com)",
+      "Bash(git pull *)",
+      "Bash(git stash *)",
+      "Bash(git push *)",
+      "Bash(git fetch *)",
+      "Bash(git rebase *)"
     ]
   }
 }
