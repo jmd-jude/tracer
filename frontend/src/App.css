@@ -453,6 +453,41 @@
   color: var(--green);
 }
 
+/* Attribution Output — hero layout */
+
+.roi-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-sm);
+  padding: var(--space-lg) 0 var(--space-md);
+}
+
+.roi-hero-number {
+  font-size: 3.5rem;
+  font-weight: 700;
+  color: var(--green);
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.roi-cost-value {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  color: var(--slate);
+}
+
+.roi-arrow {
+  color: var(--mist);
+}
+
+.roi-footnote {
+  color: var(--slate);
+  text-align: center;
+}
+
 /* Session History */
 
 .session-history {
@@ -494,6 +529,8 @@
 
 .session-table-roi {
   color: var(--blue);
+  font-size: 1rem;
+  font-weight: 600;
 }
 
 .session-table-time {

@@ -22,7 +22,7 @@ app = Flask(__name__)
 CORS(app)
 client = Anthropic()
 
-MODEL = "claude-sonnet-4-6"
+MODEL = "claude-sonnet-5"
 
 CHAIN_STEPS = [
     {

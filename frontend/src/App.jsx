@@ -15,7 +15,6 @@ export default function App() {
   const [viewSession, setViewSession] = useState(null)
   const [initialTagged, setInitialTagged] = useState(null)
   const [attribution, setAttribution] = useState(null)
-  const [model, setModel] = useState('last_call')
   const [historyKey, setHistoryKey] = useState(0)
 
   function handleChainComplete({ sessionId: id, calls: result }) {
@@ -76,7 +75,7 @@ export default function App() {
             </div>
           </div>
         )}
-        <AttributionOutput data={attribution} model={model} onModelChange={setModel} />
+        <AttributionOutput data={attribution} />
       </main>
       <SessionHistory onSelect={handleSelectSession} refreshKey={historyKey} />
       <WebhookEvents refreshKey={historyKey} />
